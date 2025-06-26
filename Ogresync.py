@@ -41,7 +41,38 @@ except ImportError:
 # CONFIG / GLOBALS
 # ------------------------------------------------
 
-CONFIG_FILE = "config.txt"  # Stores vault path, Obsidian path, setup_done flag, etc.
+def get_config_directory():
+    """Get the appropriate config directory for the current OS"""
+    import sys
+    from pathlib import Path
+    
+    # ALWAYS use OS-specific directories for proper packaging behavior
+    # This ensures consistent behavior between development and packaged versions
+    if sys.platform == "win32":
+        config_dir = os.path.join(os.environ['APPDATA'], 'Ogresync')
+    elif sys.platform == "darwin":
+        config_dir = os.path.join(os.path.expanduser('~'), 'Library', 'Application Support', 'Ogresync')
+    else:  # Linux
+        config_dir = os.path.join(os.path.expanduser('~'), '.config', 'ogresync')
+    
+    try:
+        os.makedirs(config_dir, exist_ok=True)
+        print(f"DEBUG: Config directory: {config_dir}")
+    except Exception as e:
+        print(f"WARNING: Could not create config directory {config_dir}: {e}")
+        # Fallback to script directory only if OS-specific fails
+        config_dir = os.path.dirname(os.path.abspath(__file__))
+        print(f"DEBUG: Using fallback config directory: {config_dir}")
+    
+    return config_dir
+
+def get_config_file_path():
+    """Get the full path to the config file"""
+    return os.path.join(get_config_directory(), "config.txt")
+
+# Config file path will be determined dynamically
+CONFIG_FILE = None  # Will be set by get_config_file_path()
+
 config_data = {
     "VAULT_PATH": "",
     "OBSIDIAN_PATH": "",
@@ -63,29 +94,94 @@ def load_config():
     """
     Reads config.txt into config_data dict.
     Expected lines like: KEY=VALUE
+    
+    Also handles migration from old script-directory config to new OS-specific location.
     """
-    if not os.path.exists(CONFIG_FILE):
-        return
-    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if "=" in line:
-                key, val = line.split("=", 1)
-                config_data[key.strip()] = val.strip()
+    config_loaded = False
+    
+    # Get current config file path
+    config_file = get_config_file_path()
+    
+    # Check for config in new location first
+    if os.path.exists(config_file):
+        print(f"DEBUG: Loading config from {config_file}")
+        try:
+            with open(config_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if "=" in line:
+                        key, val = line.split("=", 1)
+                        config_data[key.strip()] = val.strip()
+            config_loaded = True
+            print("DEBUG: Config loaded successfully from new location")
+        except Exception as e:
+            print(f"ERROR: Failed to load config from {config_file}: {e}")
+    
+    # If no config found in new location, check for old location (migration)
+    if not config_loaded:
+        old_config_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.txt")
+        if os.path.exists(old_config_file):
+            print(f"DEBUG: Found old config at {old_config_file}, migrating...")
+            try:
+                with open(old_config_file, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if "=" in line:
+                            key, val = line.split("=", 1)
+                            config_data[key.strip()] = val.strip()
+                
+                # Save to new location
+                save_config()
+                
+                # Try to remove old config file
+                try:
+                    os.remove(old_config_file)
+                    print("DEBUG: Successfully migrated config and removed old file")
+                except Exception as remove_err:
+                    print(f"WARNING: Could not remove old config file: {remove_err}")
+                
+                config_loaded = True
+            except Exception as e:
+                print(f"ERROR: Failed to migrate config from {old_config_file}: {e}")
+    
+    if config_loaded:
+        print("DEBUG: Final config loaded:")
+        for k, v in config_data.items():
+            print(f"DEBUG: Config - {k}: {v}")
+    else:
+        print("DEBUG: No config file found, using defaults")
 
 def save_config():
     """
-    Writes config_data dict to config.txt.
+    Writes config_data dict to config.txt in the appropriate OS-specific directory.
     """
-    print(f"DEBUG: Saving config to {CONFIG_FILE}")
+    config_file = get_config_file_path()
+    print(f"DEBUG: Saving config to {config_file}")
     for k, v in config_data.items():
         print(f"DEBUG: Saving config - {k}: {v}")
     
-    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        for k, v in config_data.items():
-            f.write(f"{k}={v}\n")
-    
-    print(f"DEBUG: Config saved successfully")
+    try:
+        # Ensure directory exists
+        config_dir = os.path.dirname(config_file)
+        os.makedirs(config_dir, exist_ok=True)
+        
+        with open(config_file, "w", encoding="utf-8") as f:
+            for k, v in config_data.items():
+                f.write(f"{k}={v}\n")
+        
+        print(f"DEBUG: Config saved successfully to {config_file}")
+    except Exception as e:
+        print(f"ERROR: Failed to save config: {e}")
+        # Try fallback location
+        try:
+            fallback_config = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.txt")
+            print(f"DEBUG: Attempting fallback save to {fallback_config}")
+            with open(fallback_config, "w", encoding="utf-8") as f:
+                for k, v in config_data.items():
+                    f.write(f"{k}={v}\n")
+            print("DEBUG: Fallback config save successful")
+        except Exception as fallback_err:
+            print(f"ERROR: Fallback config save also failed: {fallback_err}")
 
 # Import GitHub setup functions from separate module
 import github_setup
@@ -810,13 +906,13 @@ def restart_to_sync_mode():
         
         print("DEBUG: UI transition complete, starting sync")
         
-        # During transition, run sync in main thread to avoid threading conflicts
-        # This is safer during the critical transition period
+        # During transition, use proper threading to avoid UI blocking
+        # The threading=False was causing the UI lag issue
         def delayed_sync():
             try:
-                print("DEBUG: Starting sync in main thread during transition")
-                # Run sync directly in main thread during transition to avoid threading issues
-                auto_sync(use_threading=False)
+                print("DEBUG: Starting sync with proper threading to prevent UI lag")
+                # FIXED: Use threading=True to prevent UI blocking during transition
+                auto_sync(use_threading=True)
             except Exception as sync_error:
                 safe_update_log(f"❌ Error during sync: {sync_error}", None)
                 print(f"Sync error: {sync_error}")
@@ -899,7 +995,8 @@ def auto_sync(use_threading=True):
             if root:
                 try:
                     root.update_idletasks()
-                    time.sleep(0.01)  # Small delay to prevent overwhelming UI
+                    root.update()  # Force complete update cycle
+                    time.sleep(0.02)  # Slightly longer delay for better responsiveness
                 except tk.TclError:
                     pass  # UI destroyed, ignore
         
@@ -927,7 +1024,11 @@ def auto_sync(use_threading=True):
         
         # Step 1: Ensure the vault is a git repository and has at least one commit
         # First check if it's even a git repository
+        safe_update_log("Checking git repository status...", 5)
+        ensure_ui_responsiveness()
         git_check_out, git_check_err, git_check_rc = run_command("git status", cwd=vault_path)
+        ensure_ui_responsiveness()
+        
         if git_check_rc != 0:
             # Not a git repository - this shouldn't happen if setup was done correctly
             safe_update_log("❌ Directory is not a git repository. Initializing...", 5)
@@ -950,7 +1051,11 @@ def auto_sync(use_threading=True):
                 return
         
         # Check if repository has any commits
+        safe_update_log("Checking for existing commits...", 8)
+        ensure_ui_responsiveness()
         out, err, rc = run_command("git rev-parse HEAD", cwd=vault_path)
+        ensure_ui_responsiveness()
+        
         if rc != 0:
             safe_update_log("No existing commits found in your vault. Verifying if the vault is empty...", 5)
             ensure_ui_responsiveness()
@@ -965,7 +1070,9 @@ def auto_sync(use_threading=True):
             safe_update_log("Creating an initial commit to initialize the repository...", 5)
             ensure_ui_responsiveness()
             run_command("git add -A", cwd=vault_path)
+            ensure_ui_responsiveness()
             out_commit, err_commit, rc_commit = run_command('git commit -m "Initial commit (auto-sync)"', cwd=vault_path)
+            ensure_ui_responsiveness()
             if rc_commit == 0:
                 safe_update_log("Initial commit created successfully.", 5)
             else:
@@ -1130,13 +1237,17 @@ def auto_sync(use_threading=True):
 
         # Step 3: Stash local changes
         safe_update_log("Stashing any local changes...", 15)
+        ensure_ui_responsiveness()
         run_command("git stash", cwd=vault_path)
+        ensure_ui_responsiveness()
 
         # Step 4: If online, pull the latest updates (with conflict resolution)
         if network_available:
             # First, fetch remote refs to ensure we have latest info
             safe_update_log("Fetching latest remote information...", 18)
+            ensure_ui_responsiveness()
             fetch_out, fetch_err, fetch_rc = run_command("git fetch origin", cwd=vault_path)
+            ensure_ui_responsiveness()
             if fetch_rc != 0:
                 safe_update_log(f"Warning: Could not fetch from remote: {fetch_err}", 18)
             

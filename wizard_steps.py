@@ -387,15 +387,23 @@ def re_test_ssh():
             safe_update_log("SSH connection successful!", 40)
             
             # Perform the initial commit/push if there are no local commits yet
-            if config_data:
-                perform_initial_commit_and_push(config_data["VAULT_PATH"])
-
-                # Mark setup as done
-                config_data["SETUP_DONE"] = "1"
-                if _save_config_func:
-                    _save_config_func()
-
-            safe_update_log("Setup complete! You can now close this window or start sync.", 100)
+            if config_data and config_data.get("VAULT_PATH"):
+                def on_commit_complete(success, message):
+                    if success:
+                        safe_update_log("✅ Initial setup completed successfully!", 90)
+                        # Mark setup as done
+                        if config_data:
+                            config_data["SETUP_DONE"] = "1"
+                            if _save_config_func:
+                                _save_config_func()
+                        safe_update_log("Setup complete! You can now close this window or start sync.", 100)
+                    else:
+                        safe_update_log(f"❌ Setup completion failed: {message}", 90)
+                
+                # Use threaded version to prevent UI blocking
+                perform_initial_commit_and_push_threaded(config_data["VAULT_PATH"], on_commit_complete)
+            else:
+                safe_update_log("❌ Vault path not configured", 40)
         else:
             safe_update_log("SSH connection still failed. Check your GitHub key or generate a new one.", 40)
 
@@ -596,3 +604,99 @@ def copy_ssh_key():
     else:
         if ui_elements:
             ui_elements.show_error_message("Error", "No SSH key found. Generate one first.")
+
+def run_command_threaded(command, cwd=None, timeout=None, progress_callback=None, completion_callback=None):
+    """
+    Runs a command in a background thread to prevent UI blocking.
+    
+    Args:
+        command: Command to execute
+        cwd: Working directory
+        timeout: Command timeout
+        progress_callback: Function to call with progress updates (message, progress)
+        completion_callback: Function to call when complete (stdout, stderr, returncode)
+    """
+    def _command_thread():
+        try:
+            if progress_callback:
+                progress_callback(f"Executing: {command[:50]}...", None)
+            
+            result = run_command(command, cwd, timeout)
+            
+            if completion_callback:
+                completion_callback(*result)
+        except Exception as e:
+            if completion_callback:
+                completion_callback("", str(e), 1)
+    
+    thread = threading.Thread(target=_command_thread, daemon=True)
+    thread.start()
+    return thread
+
+
+def perform_initial_commit_and_push_threaded(vault_path, completion_callback=None):
+    """
+    Threaded version of perform_initial_commit_and_push to prevent UI blocking.
+    """
+    def _commit_push_thread():
+        try:
+            safe_update_log("Checking for existing commits...", 45)
+            out, err, rc = run_command("git rev-parse HEAD", cwd=vault_path)
+            
+            if rc != 0:
+                # No commits exist, create initial commit
+                safe_update_log("No local commits detected. Creating initial commit...", 50)
+                
+                # Stage all files
+                safe_update_log("Staging files...", 52)
+                run_command("git add .", cwd=vault_path)
+                
+                # Commit
+                safe_update_log("Creating initial commit...", 55)
+                out_commit, err_commit, rc_commit = run_command('git commit -m "Initial commit"', cwd=vault_path)
+                
+                if rc_commit == 0:
+                    # Check if remote has commits before pushing
+                    safe_update_log("Checking remote repository...", 60)
+                    ls_out, ls_err, ls_rc = run_command("git ls-remote --heads origin main", cwd=vault_path)
+                    
+                    if ls_out.strip():
+                        # Remote main exists, try to pull first
+                        safe_update_log("Remote 'main' branch exists. Pulling before push...", 65)
+                        pull_out, pull_err, pull_rc = run_command("git pull origin main --allow-unrelated-histories", cwd=vault_path)
+                        if pull_rc == 0:
+                            safe_update_log("Successfully merged with remote.", 70)
+                        else:
+                            safe_update_log(f"Pull failed: {pull_err}. Continuing...", 70)
+                    else:
+                        safe_update_log("Remote 'main' branch does not exist. Creating it...", 65)
+                    
+                    # Push to main
+                    safe_update_log("Pushing initial commit to GitHub...", 75)
+                    push_out, push_err, push_rc = run_command("git push -u origin main", cwd=vault_path)
+                    if push_rc == 0:
+                        safe_update_log("Initial commit pushed successfully to GitHub.", 80)
+                        if completion_callback:
+                            completion_callback(True, "Initial commit and push completed successfully")
+                    else:
+                        safe_update_log(f"Push failed: {push_err}", 80)
+                        if completion_callback:
+                            completion_callback(False, f"Push failed: {push_err}")
+                else:
+                    safe_update_log(f"Error committing files: {err_commit}", 60)
+                    if completion_callback:
+                        completion_callback(False, f"Commit failed: {err_commit}")
+            else:
+                # We already have at least one commit
+                safe_update_log("Local repository already has commits. Skipping initial commit step.", 50)
+                if completion_callback:
+                    completion_callback(True, "Repository already has commits")
+                    
+        except Exception as e:
+            safe_update_log(f"Error in commit/push operation: {e}", None)
+            if completion_callback:
+                completion_callback(False, f"Error: {e}")
+    
+    thread = threading.Thread(target=_commit_push_thread, daemon=True)
+    thread.start()
+    return thread
