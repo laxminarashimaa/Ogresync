@@ -17,9 +17,9 @@ Thank you for your interest in contributing to Ogresync! Your contributions help
    Click the "Fork" button on the repository page.
 
 2. **Create a New Branch**  
-   Create your branch from the `develop` branch:
+   Create your branch from the `development` branch:
    ```bash
-   git checkout -b feature/your-feature-name develop
+   git checkout -b feature/your-feature-name development
    ```
 3. **Implement Your Changes**\
     Follow PEP 8 guidelines and add comments/documentation as needed.
@@ -34,16 +34,16 @@ Thank you for your interest in contributing to Ogresync! Your contributions help
     ```bash
     git push origin feature/your-feature-name
     ```
-    Then, open a pull request against the `develop` branch.
+    Then, open a pull request against the `development` branch.
 
-6.  **Review Process**\
+6.  **Review Process**  
     Your pull request will be reviewed by the maintainers. Please respond to feedback and make necessary revisions.
 
-##Branching Strategy
+## Branching Strategy
 
--   **main**: Stable, production-ready code.
+-   **main**: Stable, production-ready code for distribution.
 
--   **develop**: Active development branch. All new work should be branched off from here.
+-   **development**: Active development branch with full test suite. All new work should be branched off from here.
 
 ## Code Style
 
