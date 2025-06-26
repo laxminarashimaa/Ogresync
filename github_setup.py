@@ -396,7 +396,10 @@ def analyze_repository_state(vault_path):
             if '.git' in root_dir:
                 continue
             for file in files:
-                analysis["local_files"].append(os.path.join(root_dir, file))
+                # Skip hidden files and common non-content files
+                if not file.startswith('.') and file not in ['README.md', '.gitignore']:
+                    rel_path = os.path.relpath(os.path.join(root_dir, file), vault_path)
+                    analysis["local_files"].append(rel_path)
         
         analysis["has_local_files"] = len(analysis["local_files"]) > 0
     except Exception as e:
@@ -410,8 +413,10 @@ def analyze_repository_state(vault_path):
             # Check if remote main branch exists and has files
             ls_out, ls_err, ls_rc = run_command("git ls-tree -r --name-only origin/main", cwd=vault_path)
             if ls_rc == 0 and ls_out.strip():
-                analysis["remote_files"] = ls_out.strip().split('\n')
-                analysis["has_remote_files"] = True
+                remote_files = [f.strip() for f in ls_out.splitlines() if f.strip() and not f.startswith('.')]
+                # Filter out common non-content files
+                analysis["remote_files"] = [f for f in remote_files if f not in ['README.md', '.gitignore']]
+                analysis["has_remote_files"] = len(analysis["remote_files"]) > 0
     except Exception as e:
         safe_update_log(f"Error analyzing remote repository: {e}", None)
     
@@ -513,11 +518,27 @@ def validate_vault_directory(vault_path, ui_elements=None, setup_new_vault_func=
             choice = ui_elements.create_vault_recovery_dialog(None, vault_path)
             
             if choice == "recreate":
-                # Recreate the directory and continue
+                # Recreate the directory and set up with full conflict resolution
                 try:
                     os.makedirs(vault_path, exist_ok=True)
                     safe_update_log(f"✅ Recreated vault directory: {vault_path}", None)
+                    
+                    # Use threaded version to prevent UI blocking during setup
+                    def on_setup_complete(success, message):
+                        if success:
+                            safe_update_log("✅ Vault directory recreated and configured successfully", None)
+                        else:
+                            safe_update_log(f"❌ Failed to configure recreated vault directory: {message}", None)
+                    
+                    # Start threaded setup and return immediately to prevent UI blocking
+                    setup_new_vault_directory_threaded(
+                        vault_path, ui_elements, 
+                        completion_callback=on_setup_complete
+                    )
+                    
+                    # Return success immediately - the actual setup continues in background
                     return True, True, None
+                        
                 except Exception as e:
                     safe_update_log(f"❌ Failed to recreate directory: {e}", None)
                     return False, False, None
@@ -599,8 +620,9 @@ def setup_new_vault_directory(vault_path, ui_elements=None, config_data=None,
         analysis = analyze_repository_state(vault_path)
         if analysis["conflict_detected"]:
             safe_update_log("Repository conflicts detected, resolving...", None)
-            if not handle_initial_repository_conflict(vault_path, analysis, None, 
-                                                    conflict_resolution_module, config_data):
+            if not handle_initial_repository_conflict(vault_path, analysis, parent_window=None, 
+                                                    conflict_resolution_module=conflict_resolution_module, 
+                                                    config_data=config_data):
                 safe_update_log("❌ Failed to resolve repository conflicts", None)
                 return False
         
@@ -610,3 +632,47 @@ def setup_new_vault_directory(vault_path, ui_elements=None, config_data=None,
     except Exception as e:
         safe_update_log(f"❌ Error setting up new vault directory: {e}", None)
         return False
+
+
+def setup_new_vault_directory_threaded(vault_path, ui_elements=None, config_data=None, 
+                                      save_config_func=None, conflict_resolution_module=None,
+                                      progress_callback=None, completion_callback=None):
+    """
+    Threaded version of setup_new_vault_directory to prevent UI blocking during setup.
+    
+    Args:
+        vault_path: Path to the new vault directory
+        ui_elements: UI elements module for dialogs
+        config_data: Configuration dictionary
+        save_config_func: Function to save configuration
+        conflict_resolution_module: Conflict resolution module
+        progress_callback: Function to call with progress updates (message, progress)
+        completion_callback: Function to call when complete (success, message)
+    
+    Returns:
+        Thread: The background thread running the setup
+    """
+    def _setup_thread():
+        try:
+            if progress_callback:
+                progress_callback("Initializing vault directory setup...", 10)
+            
+            result = setup_new_vault_directory(
+                vault_path, ui_elements, config_data, 
+                save_config_func, conflict_resolution_module
+            )
+            
+            if completion_callback:
+                if result:
+                    completion_callback(True, "Vault directory setup completed successfully")
+                else:
+                    completion_callback(False, "Vault directory setup failed")
+                    
+        except Exception as e:
+            safe_update_log(f"❌ Error in threaded vault setup: {e}", None)
+            if completion_callback:
+                completion_callback(False, f"Setup error: {e}")
+    
+    thread = threading.Thread(target=_setup_thread, daemon=True)
+    thread.start()
+    return thread
