@@ -356,26 +356,44 @@ def is_obsidian_running():
 # Global flag to prevent UI updates during transition
 _ui_updating_enabled = True
 _ui_lock = threading.Lock()
+_pending_after_ids = set()  # Track pending after() calls
+_ui_cleanup_in_progress = False  # Flag to indicate cleanup is happening
 
 def disable_ui_updates():
-    """Disable UI updates during transition"""
-    global _ui_updating_enabled
+    """Disable UI updates during transition and cancel pending operations"""
+    global _ui_updating_enabled, _pending_after_ids, _ui_cleanup_in_progress
     with _ui_lock:
         _ui_updating_enabled = False
+        _ui_cleanup_in_progress = True
+        
+        # Cancel all tracked pending after() calls
+        if root is not None:
+            try:
+                for after_id in _pending_after_ids.copy():
+                    try:
+                        root.after_cancel(after_id)
+                    except:
+                        pass
+                _pending_after_ids.clear()
+            except:
+                pass
 
 def enable_ui_updates():
     """Re-enable UI updates after transition"""
-    global _ui_updating_enabled
+    global _ui_updating_enabled, _pending_after_ids, _ui_cleanup_in_progress
     with _ui_lock:
         _ui_updating_enabled = True
+        _ui_cleanup_in_progress = False
+        # Clear any stale after IDs when re-enabling
+        _pending_after_ids.clear()
 
 def safe_update_log(message, progress=None):
     # Always print to console for debugging
     print(f"LOG: {message}")
     
-    # Check if UI updates are enabled
+    # Check if UI updates are enabled and cleanup is not in progress
     with _ui_lock:
-        if not _ui_updating_enabled:
+        if not _ui_updating_enabled or _ui_cleanup_in_progress:
             return
     
     # Check if we have valid UI components
@@ -384,76 +402,117 @@ def safe_update_log(message, progress=None):
         
     def _update():
         try:
-            # Double-check that UI is still valid inside the update function
+            # ENHANCED: Multiple safety checks during cleanup periods
             with _ui_lock:
-                if not _ui_updating_enabled:
+                if not _ui_updating_enabled or _ui_cleanup_in_progress:
                     return
                     
             if not (log_text and root):
                 return
                 
-            # Verify root window still exists
-            if not root.winfo_exists():
+            # ENHANCED: More comprehensive widget existence checks
+            try:
+                # Verify root exists and is valid
+                if not root.winfo_exists():
+                    return
+                    
+                # Verify we're not in the middle of destruction
+                root.winfo_name()  # This will throw if root is being destroyed
+                
+            except (tk.TclError, AttributeError, RuntimeError):
+                # Root is destroyed, being destroyed, or invalid
                 return
                 
-            # Update log text
+            # Update log text with enhanced error handling
             if log_text is not None:
                 try:
+                    # Verify log_text widget exists and is valid
+                    log_text.winfo_exists()
+                    log_text.winfo_name()  # Additional validation
+                    
                     log_text.config(state='normal')
                     log_text.insert(tk.END, message + "\n")
                     log_text.config(state='disabled')
                     log_text.yview_moveto(1)
-                except tk.TclError:
-                    # Widget destroyed between checks
+                except (tk.TclError, AttributeError, RuntimeError):
+                    # Widget destroyed or invalid - stop trying to update
                     return
                     
-            # Update progress bar
+            # Update progress bar with enhanced error handling
             if progress is not None and progress_bar is not None:
                 try:
+                    # Verify progress_bar widget exists and is valid
+                    progress_bar.winfo_exists()
+                    progress_bar.winfo_name()  # Additional validation
                     progress_bar["value"] = progress
-                except tk.TclError:
-                    # Progress bar destroyed between checks
+                except (tk.TclError, AttributeError, RuntimeError):
+                    # Progress bar destroyed or invalid - continue without it
                     pass
                     
-            # Force immediate UI update only if we're in main thread
-            current_thread = threading.current_thread()
-            is_main_thread = current_thread == threading.main_thread()
-            
-            if is_main_thread and root is not None:
-                try:
+            # ENHANCED: Ultra-conservative UI update approach
+            try:
+                # Only update if we can confirm root is still completely valid
+                if root.winfo_exists():
+                    root.winfo_name()  # Final validation
                     root.update_idletasks()
-                    root.update()  # Force full update cycle
-                except tk.TclError:
-                    # Root destroyed during update
-                    pass
+                    # Skip root.update() to prevent recursive event processing during cleanup
+            except (tk.TclError, AttributeError, RuntimeError):
+                # Root destroyed or being destroyed - stop immediately
+                return
                     
-        except (tk.TclError, AttributeError, RuntimeError):
-            # Widget destroyed or invalid - silently ignore
-            pass
+        except Exception as e:
+            # Catch any other unexpected errors and ignore them during cleanup
+            print(f"DEBUG: safe_update_log error during cleanup (ignored): {e}")
             
     try:
-        # Check if we're in the main thread
+        # ENHANCED: Ultra-safe thread detection and scheduling
         current_thread = threading.current_thread()
         is_main_thread = current_thread == threading.main_thread()
         
         if is_main_thread:
-            # We're in main thread, update immediately
-            _update()
-        else:
-            # We're in background thread, schedule update more safely
+            # We're in main thread, update immediately with extensive safety checks
             try:
-                # Use a simple flag check to prevent scheduling on destroyed UI
-                if root is not None and root.winfo_exists():
-                    root.after_idle(_update)
-                    # Very small delay to allow UI processing
-                    time.sleep(0.01)
-            except (tk.TclError, RuntimeError):
-                # Root destroyed while scheduling - silently ignore
-                pass
+                if root is not None:
+                    # Multiple validation layers
+                    if root.winfo_exists():
+                        root.winfo_name()  # Ensure not being destroyed
+                        _update()
+            except (tk.TclError, AttributeError, RuntimeError):
+                # Root destroyed or invalid - skip update completely
+                return
+        else:
+            # We're in background thread, be extremely careful about scheduling
+            try:
+                # Extensive safety checks before scheduling
+                if root is not None:
+                    # Check if root still exists and is not being destroyed
+                    if root.winfo_exists():
+                        root.winfo_name()  # Validate not in destruction
+                        
+                        # Check cleanup status one more time
+                        with _ui_lock:
+                            if _ui_cleanup_in_progress:
+                                return  # Don't schedule during cleanup
+                        
+                        # Schedule with tracking for cleanup
+                        after_id = root.after_idle(_update)
+                        with _ui_lock:
+                            if not _ui_cleanup_in_progress:  # Double check
+                                _pending_after_ids.add(after_id)
+                            else:
+                                # Cleanup started, cancel immediately
+                                try:
+                                    root.after_cancel(after_id)
+                                except:
+                                    pass
+                                    
+            except (tk.TclError, AttributeError, RuntimeError):
+                # Root destroyed, invalid, or being destroyed - silently ignore
+                return
                 
-    except (tk.TclError, AttributeError, RuntimeError):
-        # Any other error - silently ignore to prevent crashes
-        pass
+    except Exception as e:
+        # Final safety net - ignore all errors during cleanup periods
+        print(f"DEBUG: safe_update_log scheduling error during cleanup (ignored): {e}")
 
 def is_network_available():
     """
@@ -838,47 +897,77 @@ def restart_for_setup():
 def restart_to_sync_mode():
     """
     Restart the application in sync mode after setup completion.
+    FIXED: Comprehensive threading isolation to prevent Tcl_AsyncDelete errors.
     """
     global root, log_text, progress_bar
     
     try:
         print("DEBUG: Transitioning to sync mode...")
         
-        # CRITICAL: Disable UI updates immediately to prevent threading conflicts
+        # STEP 1: Immediately disable all UI updates to prevent any thread interference
         disable_ui_updates()
         
-        # Kill any remaining background threads that might call safe_update_log
-        print("DEBUG: Stopping any remaining background operations...")
+        # STEP 2: Force garbage collection to clean up any dangling references
+        import gc
+        gc.collect()
         
-        # Clean shutdown of existing UI with better thread safety
+        # STEP 3: Wait for all daemon threads to finish current operations
+        print("DEBUG: Stopping any remaining background operations...")
+        print("DEBUG: Waiting for background threads to complete UI operations...")
+        time.sleep(1.5)  # Give existing threads time to finish
+        
+        # STEP 4: Comprehensive UI cleanup with complete isolation
         if root is not None:
             try:
-                # Cancel all pending after() calls to prevent threading issues
-                print("DEBUG: Cancelling pending UI callbacks...")
-                for after_id in getattr(root, '_after_ids', []):
-                    try:
-                        root.after_cancel(after_id)
-                    except:
-                        pass
+                print("DEBUG: Comprehensive UI cleanup...")
                 
-                # Clear the tracking list
-                if hasattr(root, '_after_ids'):
-                    getattr(root, '_after_ids').clear()
-                
-                # Stop any pending after() calls
+                # Cancel ALL pending operations - be very aggressive
                 try:
-                    root.after_idle(lambda: None)  # Flush pending events
-                except:
-                    pass
+                    # Method 1: Cancel all after calls
+                    root.after_cancel("all")
+                    
+                    # Method 2: Clear the event queue
+                    while True:
+                        try:
+                            root.update_idletasks()
+                            if not root.tk.call('after', 'info'):
+                                break
+                        except:
+                            break
+                    
+                    # Method 3: Force process remaining events
+                    for _ in range(10):  # Process up to 10 pending events
+                        try:
+                            root.update_idletasks()
+                        except:
+                            break
+                    
+                except Exception as cleanup_err:
+                    print(f"Event cleanup error (non-critical): {cleanup_err}")
                 
-                # Proper cleanup sequence
-                print("DEBUG: Destroying UI...")
-                root.quit()  
-                root.update_idletasks()  # Process pending updates
-                time.sleep(0.5)  # Allow threads to finish UI operations
-                root.destroy()
+                # STEP 5: Complete widget destruction
+                print("DEBUG: Complete widget destruction...")
+                try:
+                    # Hide window immediately
+                    root.withdraw()
+                    root.overrideredirect(True)  # Prevent any window manager interactions
+                    
+                    # Wait for any pending operations to complete
+                    time.sleep(0.5)
+                    
+                    # Quit mainloop
+                    root.quit()
+                    
+                    # Additional safety delay
+                    time.sleep(0.5)
+                    
+                    # Final destroy
+                    root.destroy()
+                    
+                except Exception as destroy_error:
+                    print(f"Widget destruction error (non-critical): {destroy_error}")
                 
-                # Clear global references immediately
+                # Clear all global references immediately
                 root = None
                 log_text = None
                 progress_bar = None
@@ -886,57 +975,106 @@ def restart_to_sync_mode():
                 print("DEBUG: UI destroyed successfully")
                 
             except Exception as cleanup_error:
-                print(f"UI cleanup warning: {cleanup_error}")
+                print(f"UI cleanup error (will continue): {cleanup_error}")
         
-        # Longer delay to ensure complete cleanup and avoid threading conflicts
-        print("DEBUG: Waiting for complete cleanup...")
-        time.sleep(1.5)
+        # STEP 6: Extended thread isolation period
+        print("DEBUG: Extended thread isolation period...")
         
-        # Create new minimal UI for sync mode  
-        print("DEBUG: Creating new UI...")
-        root, log_text, progress_bar = ui_elements.create_minimal_ui(auto_run=False)
+        # Force another garbage collection
+        gc.collect()
         
-        # Ensure UI is fully rendered and stable before starting sync
-        root.update()
-        root.update_idletasks()
-        time.sleep(0.3)  # Additional stability delay
+        # Wait longer for all threads to completely finish
+        time.sleep(4.0)  # Increased from 3.0 to 4.0 seconds
         
-        # Re-enable UI updates now that new UI is ready
+        # Monitor active threads
+        active_thread_count = threading.active_count()
+        print(f"DEBUG: Active thread count after cleanup: {active_thread_count}")
+        
+        # If there are still many active threads, wait a bit more
+        if active_thread_count > 2:  # Main thread + potentially 1 cleanup thread
+            print("DEBUG: Waiting for additional background threads to finish...")
+            time.sleep(2.0)
+            final_count = threading.active_count()
+            print(f"DEBUG: Final active thread count: {final_count}")
+        
+        # STEP 7: Create completely new UI in isolated environment
+        print("DEBUG: Creating isolated new UI...")
+        try:
+            # Clear any remaining tkinter state
+            import tkinter as tk
+            
+            # Create new UI with complete isolation
+            root, log_text, progress_bar = ui_elements.create_minimal_ui(auto_run=False)
+            
+            # Ensure new UI is completely stable
+            root.update()
+            root.update_idletasks()
+            time.sleep(1.0)  # Extended stability delay
+            
+            print("DEBUG: Isolated UI created successfully")
+            
+        except Exception as ui_creation_error:
+            print(f"ERROR: Failed to create isolated UI: {ui_creation_error}")
+            enable_ui_updates()
+            raise ui_creation_error
+        
+        # STEP 8: Re-enable UI updates only after complete stabilization
         enable_ui_updates()
         
-        print("DEBUG: UI transition complete, starting sync")
+        print("DEBUG: UI transition complete, starting isolated sync")
         
-        # During transition, use proper threading to avoid UI blocking
-        # The threading=False was causing the UI lag issue
-        def delayed_sync():
+        # STEP 9: Start sync with maximum isolation
+        def completely_isolated_sync():
             try:
-                print("DEBUG: Starting sync with proper threading to prevent UI lag")
-                # FIXED: Use threading=True to prevent UI blocking during transition
+                print("DEBUG: Starting completely isolated sync process")
+                
+                # Additional safety check - ensure we're in a clean state
+                if root is None or log_text is None:
+                    print("ERROR: UI not properly initialized for sync")
+                    return
+                
+                # Start sync with threading for responsiveness
                 auto_sync(use_threading=True)
+                
             except Exception as sync_error:
-                safe_update_log(f"❌ Error during sync: {sync_error}", None)
-                print(f"Sync error: {sync_error}")
+                print(f"Isolated sync error: {sync_error}")
+                try:
+                    if root is not None:
+                        safe_update_log(f"❌ Error during sync: {sync_error}", None)
+                except:
+                    print(f"❌ Error during sync: {sync_error}")
         
-        # Use delay to ensure UI is completely stable
-        root.after(1000, delayed_sync)  # 1 second delay for stability
+        # STEP 10: Maximum delay for complete thread isolation
+        root.after(3000, completely_isolated_sync)  # Increased from 2000 to 3000ms
         
-        # Run the main loop
+        # Run the isolated main loop
+        print("DEBUG: Starting isolated main UI loop...")
         root.mainloop()
         
     except Exception as e:
-        print(f"Error transitioning to sync mode: {e}")
-        # Ensure UI updates are re-enabled even in error case
+        print(f"Error in isolated transition: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Ensure UI updates are re-enabled
         enable_ui_updates()
         
-        # Fallback: create simple console-based sync
+        # Enhanced fallback with complete isolation
         try:
-            print("Falling back to console mode...")
-            # Call auto_sync without threading in fallback mode
-            auto_sync(use_threading=False)
+            print("Entering isolated console fallback mode...")
+            # Use subprocess to run sync in complete isolation
+            import subprocess
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            result = subprocess.run([
+                sys.executable, 
+                os.path.join(current_dir, "Ogresync.py"),
+                "--console-sync"  # Special flag for console-only sync
+            ], cwd=current_dir)
             
         except Exception as fallback_error:
-            print(f"Console fallback failed: {fallback_error}")
-            print("Manual intervention required. Please check configuration.")
+            print(f"Isolated console fallback failed: {fallback_error}")
+            print("Manual intervention required. Please restart the application.")
+            input("Press Enter to exit...")
 
 # Import wizard steps functions from separate module
 import wizard_steps
@@ -2408,6 +2546,21 @@ def manual_git_recovery(vault_path):
 
 def main():
     global root, log_text, progress_bar
+    
+    # Check for console-only mode (used in fallback scenarios)
+    if len(sys.argv) > 1 and sys.argv[1] == "--console-sync":
+        print("DEBUG: Running in console-only sync mode")
+        load_config()
+        if config_data.get("SETUP_DONE", "0") == "1":
+            try:
+                # Run sync without any UI
+                auto_sync(use_threading=False)
+                print("✅ Console sync completed successfully")
+            except Exception as e:
+                print(f"❌ Console sync failed: {e}")
+        else:
+            print("❌ Setup not complete, cannot run console sync")
+        return
     
     # Initialize GitHub setup module dependencies
     try:
