@@ -2034,7 +2034,7 @@ def auto_sync(use_threading=True):
                             safe_update_log("📤 Force-pushing resolved changes (conflict resolution is final)...", 77)
                             force_push_out, force_push_err, force_push_rc = run_command("git push --force-with-lease origin main", cwd=vault_path)
                             if force_push_rc == 0:
-                                safe_update_log("✅ Successfully pushed conflict resolution to remote", 80)
+                                safe_update_log("✅ Successfully pushed conflict resolution to remote", 100)
                             else:
                                 safe_update_log(f"❌ Force push failed: {force_push_err}", 80)
                                 safe_update_log("📝 Your conflict resolution is committed locally and can be pushed manually", 100)
@@ -2090,8 +2090,8 @@ def auto_sync(use_threading=True):
                                     resolution_result = resolver.resolve_initial_setup_conflicts(remote_url)
                                     
                                     if resolution_result.success:
-                                        safe_update_log(f"✅ Push-time conflicts resolved successfully using: {resolution_result.strategy.value if resolution_result.strategy else 'unknown'}", 82)
-                                        safe_update_log("📤 Attempting to push resolved changes...", 83)
+                                        safe_update_log(f"✅ Push-time conflicts resolved successfully using: {resolution_result.strategy.value if resolution_result.strategy else 'unknown'}", 100)
+                                        safe_update_log("📤 Attempting to push resolved changes...", 100)
                                         
                                         # Try to push the resolved changes
                                         final_push_out, final_push_err, final_push_rc = run_command("git push --force-with-lease origin main", cwd=vault_path)
