@@ -263,6 +263,18 @@ def detect_git_path():
                         "Please install Git and restart Ogresync to continue setup.\n"
                         "Tip: Use the default installation options for best compatibility."
                     )
+                else:
+                    # User declined to download - final fallback message
+                    _ui_elements.show_error_message(
+                        "Git Required",
+                        "Git is required for Ogresync to function properly.\n\n"
+                        "Without Git, Ogresync cannot:\n"
+                        "• Sync files with GitHub\n"
+                        "• Track file changes\n"
+                        "• Resolve conflicts\n\n"
+                        "Please install Git from https://git-scm.com/download/win\n"
+                        "and restart Ogresync when ready."
+                    )
         return None
         
     elif platform.system() == "Darwin":  # macOS
@@ -310,6 +322,18 @@ def detect_git_path():
                         "4. Restart Ogresync after installation\n\n"
                         "Alternative: Visit git-scm.com/download/mac for other options."
                     )
+                else:
+                    # User declined to install - final fallback message
+                    _ui_elements.show_error_message(
+                        "Git Required",
+                        "Git is required for Ogresync to function properly.\n\n"
+                        "Without Git, Ogresync cannot:\n"
+                        "• Sync files with GitHub\n"
+                        "• Track file changes\n"
+                        "• Resolve conflicts\n\n"
+                        "Please install Git and restart Ogresync when ready.\n"
+                        "Visit https://git-scm.com/download/mac for more options."
+                    )
         return None
         
     else:  # Linux and others
@@ -355,6 +379,18 @@ def detect_git_path():
                         "• Arch Linux: sudo pacman -S git\n"
                         "• openSUSE: sudo zypper install git\n\n"
                         "After installation, restart Ogresync to continue setup."
+                    )
+                else:
+                    # User declined to see installation instructions - final fallback message
+                    _ui_elements.show_error_message(
+                        "Git Required",
+                        "Git is required for Ogresync to function properly.\n\n"
+                        "Without Git, Ogresync cannot:\n"
+                        "• Sync files with GitHub\n"
+                        "• Track file changes\n"
+                        "• Resolve conflicts\n\n"
+                        "Please install Git using your system's package manager\n"
+                        "and restart Ogresync when ready."
                     )
         return None
 
