@@ -305,15 +305,22 @@ class Stage2ConflictResolutionDialog:
         self._load_current_file()
           # Show dialog and wait for completion
         try:
-            if self.dialog:                # Ensure dialog is visible and on top
+            if self.dialog:
+                # Ensure dialog is visible and on top
                 self.dialog.deiconify()
                 self.dialog.lift()
                 self.dialog.focus_force()
-                  # Bring to front again after a brief delay to ensure visibility
+                
+                # Make sure we're not closing immediately
+                print("[DEBUG] Stage 2 dialog created, ensuring it stays visible...")
+                
+                # Bring to front again after a brief delay to ensure visibility
                 def bring_to_front():
                     try:
                         if self.dialog and hasattr(self.dialog, 'lift'):
                             self.dialog.lift()
+                            self.dialog.focus_force()
+                            print("[DEBUG] Stage 2 dialog brought to front")
                     except tk.TclError:
                         pass  # Dialog might be destroyed
                 
@@ -321,6 +328,7 @@ class Stage2ConflictResolutionDialog:
                     try:
                         if self.dialog and hasattr(self.dialog, 'focus_force'):
                             self.dialog.focus_force()
+                            print("[DEBUG] Stage 2 dialog focus forced")
                     except tk.TclError:
                         pass  # Dialog might be destroyed
                 
@@ -329,8 +337,45 @@ class Stage2ConflictResolutionDialog:
                 callback2 = self.dialog.after(200, force_focus)
                 self.scheduled_callbacks.extend([callback1, callback2])
                 
-                # Start the mainloop
-                self.dialog.mainloop()
+                # Add a callback to ensure dialog stays alive for at least a few seconds
+                def ensure_alive():
+                    try:
+                        if self.dialog and hasattr(self.dialog, 'winfo_exists'):
+                            print("[DEBUG] Stage 2 dialog still alive after 1 second")
+                    except tk.TclError:
+                        print("[DEBUG] Stage 2 dialog destroyed within 1 second")
+                
+                callback3 = self.dialog.after(1000, ensure_alive)
+                self.scheduled_callbacks.append(callback3)
+                
+                print("[DEBUG] Starting Stage 2 dialog - using modal approach...")
+                
+                # For threaded calls, use a different approach than mainloop()
+                # Make the dialog modal using grab_set and wait_window instead
+                try:
+                    # Make dialog modal
+                    self.dialog.grab_set()
+                    self.dialog.focus_set()
+                    
+                    # Wait for dialog to be destroyed instead of using mainloop
+                    print("[DEBUG] Waiting for Stage 2 dialog completion...")
+                    self.dialog.wait_window()
+                    print("[DEBUG] Stage 2 dialog completed")
+                    
+                except tk.TclError as tcl_err:
+                    print(f"[DEBUG] Tkinter error during Stage 2 wait: {tcl_err}")
+                    # Dialog might have been destroyed already
+                
+                except Exception as wait_err:
+                    print(f"[DEBUG] Error during Stage 2 wait: {wait_err}")
+                    
+                finally:
+                    # Ensure grab is released
+                    try:
+                        if self.dialog and hasattr(self.dialog, 'grab_release'):
+                            self.dialog.grab_release()
+                    except:
+                        pass
         except Exception as e:
             print(f"[ERROR] Dialog error: {e}")
             import traceback
@@ -340,11 +385,29 @@ class Stage2ConflictResolutionDialog:
     
     def _create_dialog(self):
         """Create the main dialog window"""
-        # Always create as a new independent window to ensure it's on top
-        self.dialog = tk.Tk()
+        # Create appropriate window type based on parent
+        if self.parent and hasattr(self.parent, 'winfo_exists'):
+            try:
+                # Check if parent still exists and is valid
+                if self.parent.winfo_exists():
+                    # Create as Toplevel with parent
+                    self.dialog = tk.Toplevel(self.parent)
+                    self.dialog.transient(self.parent)
+                    print("[DEBUG] Created Stage 2 as Toplevel with parent")
+                else:
+                    # Parent destroyed, create new Tk window
+                    self.dialog = tk.Tk()
+                    print("[DEBUG] Parent destroyed, created Stage 2 as new Tk window")
+            except (tk.TclError, AttributeError):
+                # Parent invalid, create new Tk window
+                self.dialog = tk.Tk()
+                print("[DEBUG] Parent invalid, created Stage 2 as new Tk window")
+        else:
+            # No parent or invalid parent, create new Tk window
+            self.dialog = tk.Tk()
+            print("[DEBUG] No parent, created Stage 2 as new Tk window")
         
-        # If we have a parent, store reference but don't make it transient
-        # This ensures the Stage 2 dialog is always on top and visible
+        # Store parent reference
         if self.parent:
             self._hidden_parent = self.parent
         
@@ -415,26 +478,11 @@ class Stage2ConflictResolutionDialog:
             # Clear any widget references to prevent orphan callbacks
             self._clear_widget_references()
             
-            # Exit the mainloop first before destroying - CRITICAL FIX
+            # For wait_window() approach, we just need to destroy the dialog
             if self.dialog:
                 try:
-                    print("[DEBUG] Stage 2 cleanup: Quitting mainloop")
-                    # Quit the mainloop to return control to Stage 1
-                    self.dialog.quit()
-                    print("[DEBUG] Stage 2 cleanup: Mainloop quit successful")
-                except tk.TclError as e:
-                    print(f"[DEBUG] Stage 2 cleanup: Mainloop quit failed (expected): {e}")
-                    pass  # Mainloop might not be running
-                
-                # Small delay to ensure mainloop fully exits
-                try:
-                    self.dialog.update()
-                except tk.TclError:
-                    pass
-                
-                try:
                     print("[DEBUG] Stage 2 cleanup: Destroying dialog")
-                    # Now destroy the dialog
+                    # Destroy the dialog - this will make wait_window() return
                     self.dialog.destroy()
                     print("[DEBUG] Stage 2 cleanup: Dialog destroyed successfully")
                 except tk.TclError as e:

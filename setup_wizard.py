@@ -2588,9 +2588,28 @@ Created: {time.strftime('%Y-%m-%d %H:%M:%S')}
                         self._update_status("✅ Sync complete - remote content preserved as requested")
                         return True, "Synchronization complete - remote content preserved (no local push)"
                     elif conflict_strategy == ConflictStrategy.SMART_MERGE:
-                        print("[DEBUG] Final sync - SMART_MERGE strategy: sync already handled in Step 9")
-                        self._update_status("✅ Sync complete - repositories already merged")
-                        return True, "Synchronization complete - smart merge already applied"
+                        print("[DEBUG] Final sync - SMART_MERGE strategy: verifying push status")
+                        
+                        # Check if there are unpushed commits (in case push failed during conflict resolution)
+                        unpushed_result = subprocess.run(['git', 'log', 'origin/main..HEAD', '--oneline'], 
+                                                       cwd=vault_path, capture_output=True, text=True)
+                        
+                        if unpushed_result.returncode == 0 and unpushed_result.stdout.strip():
+                            print("[DEBUG] Final sync - Found unpushed commits after SMART_MERGE, attempting push")
+                            push_result = subprocess.run(['git', 'push', '-u', 'origin', 'main'], 
+                                                       cwd=vault_path, capture_output=True, text=True)
+                            if push_result.returncode == 0:
+                                print("[DEBUG] Final sync - Successfully pushed remaining commits")
+                                self._update_status("✅ Smart merge complete - all changes pushed to GitHub")
+                                return True, "Smart merge completed successfully - all changes synchronized with GitHub"
+                            else:
+                                print(f"[DEBUG] Final sync - Push failed: {push_result.stderr}")
+                                self._update_status("⚠️ Smart merge complete locally - manual push may be needed")
+                                return True, f"Smart merge completed - push failed: {push_result.stderr[:100]}"
+                        else:
+                            print("[DEBUG] Final sync - No unpushed commits found, smart merge already synchronized")
+                            self._update_status("✅ Smart merge complete - repositories already synchronized")
+                            return True, "Smart merge completed successfully - repositories already synchronized"
                 except ImportError:
                     print("[DEBUG] Final sync - Could not import ConflictStrategy, continuing")
             
