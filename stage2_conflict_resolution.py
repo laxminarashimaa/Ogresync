@@ -396,26 +396,87 @@ class Stage2ConflictResolutionDialog:
     def _cleanup_and_destroy(self):
         """Safely cleanup and destroy the dialog"""
         try:
-            # Cancel any scheduled callbacks
+            print("[DEBUG] Stage 2 cleanup: Starting dialog cleanup")
+            
+            # Cancel any scheduled callbacks first to prevent callback errors
             if hasattr(self, 'scheduled_callbacks'):
+                print(f"[DEBUG] Stage 2 cleanup: Canceling {len(self.scheduled_callbacks)} scheduled callbacks")
                 for callback_id in self.scheduled_callbacks:
                     try:
-                        if self.dialog:
+                        if self.dialog and callback_id:
                             self.dialog.after_cancel(callback_id)
-                    except tk.TclError:
+                            print(f"[DEBUG] Stage 2 cleanup: Canceled callback {callback_id}")
+                    except (tk.TclError, AttributeError) as e:
+                        print(f"[DEBUG] Stage 2 cleanup: Callback {callback_id} already canceled or invalid: {e}")
                         pass  # Callback might already be executed or cancelled
                 self.scheduled_callbacks.clear()
+                print("[DEBUG] Stage 2 cleanup: All callbacks canceled")
             
-            # Destroy the dialog
+            # Clear any widget references to prevent orphan callbacks
+            self._clear_widget_references()
+            
+            # Exit the mainloop first before destroying - CRITICAL FIX
             if self.dialog:
                 try:
-                    self.dialog.destroy()
+                    print("[DEBUG] Stage 2 cleanup: Quitting mainloop")
+                    # Quit the mainloop to return control to Stage 1
+                    self.dialog.quit()
+                    print("[DEBUG] Stage 2 cleanup: Mainloop quit successful")
+                except tk.TclError as e:
+                    print(f"[DEBUG] Stage 2 cleanup: Mainloop quit failed (expected): {e}")
+                    pass  # Mainloop might not be running
+                
+                # Small delay to ensure mainloop fully exits
+                try:
+                    self.dialog.update()
                 except tk.TclError:
+                    pass
+                
+                try:
+                    print("[DEBUG] Stage 2 cleanup: Destroying dialog")
+                    # Now destroy the dialog
+                    self.dialog.destroy()
+                    print("[DEBUG] Stage 2 cleanup: Dialog destroyed successfully")
+                except tk.TclError as e:
+                    print(f"[DEBUG] Stage 2 cleanup: Dialog destroy failed: {e}")
                     pass  # Dialog might already be destroyed
+                
                 self.dialog = None
+                print("[DEBUG] Stage 2 cleanup: Dialog reference cleared")
+                
         except Exception as e:
-            print(f"[WARNING] Error during dialog cleanup: {e}")
+            print(f"[ERROR] Stage 2 cleanup: Error during dialog cleanup: {e}")
+            import traceback
+            traceback.print_exc()
     
+    def _clear_widget_references(self):
+        """Clear widget references to prevent orphan callbacks - only during final cleanup"""
+        try:
+            print("[DEBUG] Stage 2 cleanup: Clearing widget references")
+            # Clear all widget references that might have callbacks
+            # Only clear these during final cleanup to avoid interfering with ongoing operations
+            if hasattr(self, 'file_list_var'):
+                self.file_list_var = None
+            if hasattr(self, 'file_listbox'):
+                self.file_listbox = None
+            if hasattr(self, 'local_text'):
+                self.local_text = None
+            if hasattr(self, 'remote_text'):
+                self.remote_text = None
+            if hasattr(self, 'editor_text'):
+                self.editor_text = None
+            if hasattr(self, 'progress_label'):
+                self.progress_label = None
+            if hasattr(self, 'file_info_label'):
+                self.file_info_label = None
+            
+            # Note: Don't clear content_notebook here as it may still be needed
+            # It will be destroyed with the main dialog
+                
+            print("[DEBUG] Stage 2 cleanup: Widget references cleared")
+        except Exception as e:
+            print(f"[DEBUG] Stage 2 cleanup: Error clearing widget references: {e}")
+
     def _on_window_close(self):
         """Handle window close event (X button)"""
         self._cancel_resolution()
