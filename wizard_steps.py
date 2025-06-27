@@ -264,16 +264,13 @@ def detect_git_path():
                         "Tip: Use the default installation options for best compatibility."
                     )
                 else:
-                    # User declined to download - final fallback message
-                    _ui_elements.show_error_message(
+                    # User chose not to download either - show final fallback message
+                    _ui_elements.show_info_message(
                         "Git Required",
                         "Git is required for Ogresync to function properly.\n\n"
-                        "Without Git, Ogresync cannot:\n"
-                        "• Sync files with GitHub\n"
-                        "• Track file changes\n"
-                        "• Resolve conflicts\n\n"
+                        "The setup wizard cannot continue without Git installed.\n\n"
                         "Please install Git from https://git-scm.com/download/win\n"
-                        "and restart Ogresync when ready."
+                        "and restart Ogresync to continue."
                     )
         return None
         
@@ -323,16 +320,12 @@ def detect_git_path():
                         "Alternative: Visit git-scm.com/download/mac for other options."
                     )
                 else:
-                    # User declined to install - final fallback message
-                    _ui_elements.show_error_message(
+                    # User chose not to install - show final fallback message
+                    _ui_elements.show_info_message(
                         "Git Required",
                         "Git is required for Ogresync to function properly.\n\n"
-                        "Without Git, Ogresync cannot:\n"
-                        "• Sync files with GitHub\n"
-                        "• Track file changes\n"
-                        "• Resolve conflicts\n\n"
-                        "Please install Git and restart Ogresync when ready.\n"
-                        "Visit https://git-scm.com/download/mac for more options."
+                        "The setup wizard cannot continue without Git installed.\n\n"
+                        "Please install Git and restart Ogresync to continue."
                     )
         return None
         
@@ -381,16 +374,13 @@ def detect_git_path():
                         "After installation, restart Ogresync to continue setup."
                     )
                 else:
-                    # User declined to see installation instructions - final fallback message
-                    _ui_elements.show_error_message(
+                    # User chose not to view instructions - show final fallback message
+                    _ui_elements.show_info_message(
                         "Git Required",
                         "Git is required for Ogresync to function properly.\n\n"
-                        "Without Git, Ogresync cannot:\n"
-                        "• Sync files with GitHub\n"
-                        "• Track file changes\n"
-                        "• Resolve conflicts\n\n"
+                        "The setup wizard cannot continue without Git installed.\n\n"
                         "Please install Git using your system's package manager\n"
-                        "and restart Ogresync when ready."
+                        "and restart Ogresync to continue."
                     )
         return None
 
