@@ -218,6 +218,56 @@ class Stage2ConflictResolutionDialog:
         # External editors
         self.available_editors = ExternalEditorManager.detect_available_editors()
     
+    def _set_window_icon(self):
+        """Set window icon for the dialog"""
+        if not self.dialog:
+            return
+            
+        try:
+            # Try to find icon files
+            icon_paths = []
+            
+            # Check if we're running from a PyInstaller bundle
+            if hasattr(sys, '_MEIPASS'):
+                # Running from PyInstaller bundle
+                bundle_dir = sys._MEIPASS
+                icon_paths.extend([
+                    os.path.join(bundle_dir, "assets", "new_logo_1.ico"),
+                    os.path.join(bundle_dir, "assets", "ogrelix_logo.ico"),
+                    os.path.join(bundle_dir, "assets", "new_logo_1.png")
+                ])
+            else:
+                # Running from source
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                icon_paths.extend([
+                    os.path.join(script_dir, "assets", "new_logo_1.ico"),
+                    os.path.join(script_dir, "assets", "ogrelix_logo.ico"),
+                    os.path.join(script_dir, "assets", "new_logo_1.png")
+                ])
+            
+            # Try to set icon from available files
+            for icon_path in icon_paths:
+                if os.path.exists(icon_path):
+                    try:
+                        if icon_path.lower().endswith('.ico'):
+                            self.dialog.iconbitmap(icon_path)
+                        elif icon_path.lower().endswith('.png'):
+                            # For PNG files, try to load as PhotoImage
+                            try:
+                                icon_image = tk.PhotoImage(file=icon_path)
+                                self.dialog.iconphoto(True, icon_image)
+                            except Exception:
+                                pass  # If PNG loading fails, continue to next icon
+                        print(f"[DEBUG] Successfully set window icon: {icon_path}")
+                        break
+                    except Exception as e:
+                        print(f"[DEBUG] Failed to set icon {icon_path}: {e}")
+                        continue
+                        
+        except Exception as e:
+            print(f"[DEBUG] Icon loading failed: {e}")
+            pass  # Icon is optional, don't break the dialog
+    
     def _maintain_focus(self):
         """Helper method to maintain proper window focus and layering"""
         if self.dialog:
@@ -301,6 +351,9 @@ class Stage2ConflictResolutionDialog:
         self.dialog.title("Stage 2: File-by-File Conflict Resolution")
         self.dialog.configure(bg="#FAFBFC")
         self.dialog.resizable(True, True)
+        
+        # Set window icon
+        self._set_window_icon()
         
         # Initialize Tkinter variables after dialog window is created
         self.file_list_var = tk.StringVar()

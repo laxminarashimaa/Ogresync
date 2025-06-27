@@ -1566,6 +1566,56 @@ class ConflictResolutionDialog:
         self.dialog: Optional[Union[tk.Tk, tk.Toplevel]] = None
         self.listboxes = []  # Initialize listboxes for per-list scrolling
         
+    def _set_window_icon(self):
+        """Set window icon for the dialog"""
+        if not self.dialog:
+            return
+            
+        try:
+            # Try to find icon files
+            icon_paths = []
+            
+            # Check if we're running from a PyInstaller bundle
+            if hasattr(sys, '_MEIPASS'):
+                # Running from PyInstaller bundle
+                bundle_dir = sys._MEIPASS
+                icon_paths.extend([
+                    os.path.join(bundle_dir, "assets", "new_logo_1.ico"),
+                    os.path.join(bundle_dir, "assets", "ogrelix_logo.ico"),
+                    os.path.join(bundle_dir, "assets", "new_logo_1.png")
+                ])
+            else:
+                # Running from source
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                icon_paths.extend([
+                    os.path.join(script_dir, "assets", "new_logo_1.ico"),
+                    os.path.join(script_dir, "assets", "ogrelix_logo.ico"),
+                    os.path.join(script_dir, "assets", "new_logo_1.png")
+                ])
+            
+            # Try to set icon from available files
+            for icon_path in icon_paths:
+                if os.path.exists(icon_path):
+                    try:
+                        if icon_path.lower().endswith('.ico'):
+                            self.dialog.iconbitmap(icon_path)
+                        elif icon_path.lower().endswith('.png'):
+                            # For PNG files, try to load as PhotoImage
+                            try:
+                                icon_image = tk.PhotoImage(file=icon_path)
+                                self.dialog.iconphoto(True, icon_image)
+                            except Exception:
+                                pass  # If PNG loading fails, continue to next icon
+                        print(f"[DEBUG] Successfully set window icon: {icon_path}")
+                        break
+                    except Exception as e:
+                        print(f"[DEBUG] Failed to set icon {icon_path}: {e}")
+                        continue
+                        
+        except Exception as e:
+            print(f"[DEBUG] Icon loading failed: {e}")
+            pass  # Icon is optional, don't break the dialog
+        
     def show(self) -> Optional[ConflictStrategy]:
         """Show the dialog and return the selected strategy"""
         print("[DEBUG] Starting Stage 1 show() method")
@@ -1575,6 +1625,9 @@ class ConflictResolutionDialog:
         
         self.dialog.title("Repository Conflict Resolution - Enhanced with History Preservation")
         print("[DEBUG] Set title")
+        
+        # Set window icon
+        self._set_window_icon()
         
         # Configure dialog
         self.dialog.configure(bg="#FAFBFC")
