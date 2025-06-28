@@ -35,16 +35,17 @@ Ogresync is a professional Git synchronization tool designed for cross-platform 
 
 ### Key Directories
 
-**Main Branch:**
+**Main Branch (Current):**
 - `/` - Core application modules and configuration
 - `/assets/` - Application icons and branding
-- `/build/` - Build artifacts (excluded from `main` branch)
+- `/build/` - Build artifacts (excluded from repository)
 
 **Development Branch:**
+- Contains all main branch content PLUS
 - `/tests/` - Comprehensive test suite (30+ test files)
-- Additional development tools and documentation
+- `DEVELOPMENT.md` - Advanced technical documentation
 
-*Note: Releases are managed through GitHub Releases, not tracked in the repository.*
+*Note: Switch to Development branch for full contributor environment with tests and development tools.*
 
 ## Getting Started
 
@@ -55,26 +56,35 @@ Ogresync is a professional Git synchronization tool designed for cross-platform 
 
 ### Development Setup
 1. **Fork the repository** on GitHub
-2. **Clone your fork locally**:
+2. **Clone your fork and switch to development**:
    ```bash
    git clone git@github.com:YOUR_USERNAME/ogresync.git
    cd ogresync
+   git checkout Development  # Switch to branch with tests and dev tools
    ```
 3. **Set up the development environment**:
    ```bash
-   # Switch to development branch (where tests and dev tools are located)
-   git checkout development
-   
    # Create virtual environment (recommended)
    python -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    
    # Install dependencies
    pip install -r requirements.txt
+   
+   # Install development dependencies
+   pip install pytest flake8 black
    ```
 4. **Add upstream remote**:
    ```bash
    git remote add upstream git@github.com:AbijithBalaji/ogresync.git
+   ```
+5. **Verify setup**:
+   ```bash
+   # Test the application
+   python Ogresync.py --help
+   
+   # Run tests to ensure everything works
+   python tests/comprehensive_test_suite.py
    ```
 
 ### Verify Installation
@@ -119,12 +129,12 @@ git commit -m "WIP"
 
 ## Testing
 
-Ogresync has a comprehensive test suite with 30+ test files covering various scenarios. **Tests are located in the `development` branch only.**
+Ogresync has a comprehensive test suite with 30+ test files covering various scenarios. **Tests are located in the `Development` branch only.**
 
 ### Running Tests
 First, switch to the development branch to access the test suite:
 ```bash
-git checkout development
+git checkout Development
 ```
 
 Then run tests:
@@ -132,10 +142,13 @@ Then run tests:
 # Run all tests
 python -m pytest tests/
 
-# Run specific test categories
+# Run the comprehensive test suite
 python tests/comprehensive_test_suite.py
+
+# Run specific test categories
 python tests/test_conflict_resolution.py
 python tests/test_offline_components.py
+python tests/test_security_fixes.py
 ```
 
 ### Key Test Areas
@@ -321,4 +334,4 @@ Thank you for contributing to Ogresync! Your efforts help make Git synchronizati
 
 ---
 
-**Maintainers**: See `DEVELOPMENT.md` (development branch) for advanced architectural documentation and release procedures.
+**Advanced Developers**: See `DEVELOPMENT.md` (available in Development branch) for technical architecture, build processes, and maintainer guidelines.
