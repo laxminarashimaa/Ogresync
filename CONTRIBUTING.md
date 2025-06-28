@@ -34,10 +34,15 @@ Ogresync is a professional Git synchronization tool designed for cross-platform 
 3. **Maintainers** handle packaging: `main` → platform-specific branches → releases
 
 ### Key Directories
+
+**Main Branch:**
 - `/` - Core application modules and configuration
-- `/tests/` - Comprehensive test suite (30+ test files)
 - `/assets/` - Application icons and branding
 - `/build/` - Build artifacts (excluded from `main` branch)
+
+**Development Branch:**
+- `/tests/` - Comprehensive test suite (30+ test files)
+- Additional development tools and documentation
 
 *Note: Releases are managed through GitHub Releases, not tracked in the repository.*
 
@@ -57,7 +62,7 @@ Ogresync is a professional Git synchronization tool designed for cross-platform 
    ```
 3. **Set up the development environment**:
    ```bash
-   # Switch to development branch
+   # Switch to development branch (where tests and dev tools are located)
    git checkout development
    
    # Create virtual environment (recommended)
@@ -114,9 +119,15 @@ git commit -m "WIP"
 
 ## Testing
 
-Ogresync has a comprehensive test suite with 30+ test files covering various scenarios.
+Ogresync has a comprehensive test suite with 30+ test files covering various scenarios. **Tests are located in the `development` branch only.**
 
 ### Running Tests
+First, switch to the development branch to access the test suite:
+```bash
+git checkout development
+```
+
+Then run tests:
 ```bash
 # Run all tests
 python -m pytest tests/
